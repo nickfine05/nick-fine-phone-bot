@@ -2,6 +2,8 @@ require("dotenv").config();
 const { Client, GatewayIntentBits } = require("discord.js");
 const twilio = require("twilio");
 
+console.log("🚨 MULTI-NUMBER BUILD ACTIVE 🚨");
+
 const {
   DISCORD_BOT_TOKEN,
   CHANNEL_ID,
@@ -37,6 +39,13 @@ let lastCallAt = 0;
 const COOLDOWN_MS = 60_000;
 const TRIGGER = "@call";
 
+function parseNumbers(raw) {
+  return raw
+    .split(",")
+    .map(n => n.trim())
+    .filter(n => n.length > 0);
+}
+
 client.on("messageCreate", async (message) => {
   try {
     if (message.author.bot) return;
@@ -49,20 +58,32 @@ client.on("messageCreate", async (message) => {
     if (now - lastCallAt < COOLDOWN_MS) return;
     lastCallAt = now;
 
-    await tw.calls.create({
-      to: TO_NUMBER,
-      from: TWILIO_FROM_NUMBER,
-      twiml:
-        "<Response><Say voice='alice'>Discord callout triggered. Check callout test channel.</Say></Response>",
-    });
+    const numbers = parseNumbers(TO_NUMBER);
 
-    console.log("Call placed successfully.");
+    console.log("Numbers parsed:", numbers);
+
+    for (const num of numbers) {
+      try {
+        console.log("Calling:", num);
+
+        const call = await tw.calls.create({
+          to: num,
+          from: TWILIO_FROM_NUMBER,
+          twiml:
+            "<Response><Say voice='alice'>Discord callout triggered.</Say></Response>",
+        });
+
+        console.log("Success:", num, call.sid);
+      } catch (err) {
+        console.error("Failed:", num, err.message);
+      }
+    }
   } catch (err) {
     console.error("Error:", err?.message || err);
   }
 });
 
-client.once("ready", () => {
+client.once("clientReady", () => {
   console.log(`Bot logged in as ${client.user.tag}`);
   console.log(`Listening on channel ID: ${CHANNEL_ID}`);
 });
