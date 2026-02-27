@@ -37,7 +37,7 @@ const tw = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
 let lastCallAt = 0;
 const COOLDOWN_MS = 60_000;
-const TRIGGER = "@call";
+const TRIGGER = "callout";
 
 function parseNumbers(raw) {
   return raw
