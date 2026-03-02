@@ -7,7 +7,11 @@ const {
   CHANNEL_ID,
   TWILIO_ACCOUNT_SID,
   TWILIO_AUTH_TOKEN,
-  TWILIO_FROM_NUMBER,
+  TWILIO_FROM_1,
+  TWILIO_FROM_2,
+  TWILIO_FROM_3,
+  TWILIO_FROM_4,
+  TWILIO_FROM_5,
   TO_NUMBER,
 } = process.env;
 
@@ -19,7 +23,7 @@ if (
   !CHANNEL_ID ||
   !TWILIO_ACCOUNT_SID ||
   !TWILIO_AUTH_TOKEN ||
-  !TWILIO_FROM_NUMBER ||
+  !TWILIO_FROM_1 ||
   !TO_NUMBER
 ) {
   console.error("❌ Missing environment variables.");
@@ -48,7 +52,18 @@ const tw = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 let lastCallAt = 0;
 const COOLDOWN_MS = 60_000;
 const TRIGGER = "@call";
-const DELAY_BETWEEN_CALLS_MS = 1000;
+const DELAY_BETWEEN_CALLS_MS = 2000;
+
+// ===============================
+// FROM NUMBERS LIST
+// ===============================
+const FROM_NUMBERS = [
+  TWILIO_FROM_1,
+  TWILIO_FROM_2,
+  TWILIO_FROM_3,
+  TWILIO_FROM_4,
+  TWILIO_FROM_5,
+].filter(Boolean);
 
 // ===============================
 // SLEEP HELPER
@@ -69,45 +84,68 @@ function parseNumbers(raw) {
 }
 
 // ===============================
-// CALL ALL NUMBERS SEQUENTIALLY
+// SPLIT INTO GROUPS
 // ===============================
-async function callAllNumbers(numbers) {
-  console.log(`📋 Total numbers to call: ${numbers.length}`);
-  console.log("Numbers:", numbers);
+function splitIntoGroups(numbers, groupCount) {
+  const groups = Array.from({ length: groupCount }, () => []);
+  numbers.forEach((num, i) => {
+    groups[i % groupCount].push(num);
+  });
+  return groups;
+}
 
-  let successCount = 0;
-  let failCount = 0;
+// ===============================
+// CALL ONE GROUP SEQUENTIALLY
+// ===============================
+async function callGroup(fromNumber, recipients, groupIndex) {
+  let success = 0;
+  let fail = 0;
 
-  for (let i = 0; i < numbers.length; i++) {
-    const num = numbers[i];
-    const position = `${i + 1} of ${numbers.length}`;
-
+  for (let i = 0; i < recipients.length; i++) {
+    const num = recipients[i];
     try {
-      console.log(`📞 Calling ${position}: ${num}`);
-
+      console.log(`📞 [Line ${groupIndex + 1}] Calling: ${num}`);
       const call = await tw.calls.create({
         to: num,
-        from: TWILIO_FROM_NUMBER,
-        twiml: "<Response><Say>Trade alert triggered. Check your positions now.</Say></Response>",
+        from: fromNumber,
+        twiml: "<Response><Pause length=\"20\"/></Response>",
       });
-
-      console.log(`✅ Called ${position}: ${num} | SID: ${call.sid}`);
-      successCount++;
-
+      console.log(`✅ [Line ${groupIndex + 1}] OK: ${num} | SID: ${call.sid}`);
+      success++;
     } catch (err) {
-      console.error(`❌ FAILED ${position}: ${num}`);
-      console.error(`Reason: ${err.message}`);
-      failCount++;
+      console.error(`❌ [Line ${groupIndex + 1}] FAILED: ${num} | ${err.message}`);
+      fail++;
     }
 
-    // Wait between calls except after the last one
-    if (i < numbers.length - 1) {
-      console.log(`⏳ Waiting ${DELAY_BETWEEN_CALLS_MS}ms before next call...`);
+    if (i < recipients.length - 1) {
       await sleep(DELAY_BETWEEN_CALLS_MS);
     }
   }
 
-  console.log(`🏁 Call cycle complete. Success: ${successCount} | Failed: ${failCount}`);
+  return { success, fail };
+}
+
+// ===============================
+// CALL ALL NUMBERS
+// ===============================
+async function callAllNumbers(numbers) {
+  console.log(`\n📋 Total numbers: ${numbers.length}`);
+  console.log(`📱 Twilio lines active: ${FROM_NUMBERS.length}`);
+
+  const groups = splitIntoGroups(numbers, FROM_NUMBERS.length);
+
+  groups.forEach((group, i) => {
+    console.log(`   Line ${i + 1} (${FROM_NUMBERS[i]}): ${group.length} numbers`);
+  });
+
+  const results = await Promise.all(
+    groups.map((group, i) => callGroup(FROM_NUMBERS[i], group, i))
+  );
+
+  const totalSuccess = results.reduce((sum, r) => sum + r.success, 0);
+  const totalFail = results.reduce((sum, r) => sum + r.fail, 0);
+
+  console.log(`\n🏁 Complete — Success: ${totalSuccess} | Failed: ${totalFail}`);
 }
 
 // ===============================
@@ -130,13 +168,13 @@ client.on("messageCreate", async (message) => {
 
     lastCallAt = now;
 
-    console.log(`🔔 Trigger detected in message: "${message.content}"`);
-    console.log(`👤 Triggered by: ${message.author.tag}`);
+    console.log(`🔔 Trigger: "${message.content}"`);
+    console.log(`👤 By: ${message.author.tag}`);
 
     const numbers = parseNumbers(TO_NUMBER);
 
     if (numbers.length === 0) {
-      console.error("❌ No valid numbers found. Check TO_NUMBER format.");
+      console.error("❌ No valid numbers found.");
       return;
     }
 
@@ -152,13 +190,23 @@ client.on("messageCreate", async (message) => {
 // ===============================
 client.once("ready", () => {
   console.log(`🤖 Logged in as ${client.user.tag}`);
-  console.log(`🎯 Listening on channel: ${CHANNEL_ID}`);
-  console.log(`🔑 Trigger word: ${TRIGGER}`);
+  console.log(`🎯 Channel: ${CHANNEL_ID}`);
+  console.log(`📱 Lines: ${FROM_NUMBERS.length}`);
   console.log(`⏱️ Cooldown: ${COOLDOWN_MS / 1000}s`);
-  console.log(`📞 Delay between calls: ${DELAY_BETWEEN_CALLS_MS}ms`);
+  console.log(`🔑 Trigger: ${TRIGGER}`);
+  console.log(`Waiting for @call...`);
 });
 
 // ===============================
 // LOGIN
 // ===============================
 client.login(DISCORD_BOT_TOKEN);
+```
+
+---
+
+Copy this into your index.js then push to GitHub:
+```
+git add index.js
+git commit -m "5 number rotation"
+git push
