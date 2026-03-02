@@ -2,8 +2,6 @@ require("dotenv").config();
 const { Client, GatewayIntentBits } = require("discord.js");
 const twilio = require("twilio");
 
-console.log("🚨 MULTI-NUMBER BUILD ACTIVE 🚨");
-
 const {
   DISCORD_BOT_TOKEN,
   CHANNEL_ID,
@@ -13,6 +11,9 @@ const {
   TO_NUMBER,
 } = process.env;
 
+// ===============================
+// ENV VALIDATION
+// ===============================
 if (
   !DISCORD_BOT_TOKEN ||
   !CHANNEL_ID ||
@@ -21,10 +22,13 @@ if (
   !TWILIO_FROM_NUMBER ||
   !TO_NUMBER
 ) {
-  console.error("Missing env vars. Check your .env file.");
+  console.error("❌ Missing environment variables.");
   process.exit(1);
 }
 
+// ===============================
+// DISCORD CLIENT
+// ===============================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -33,19 +37,82 @@ const client = new Client({
   ],
 });
 
+// ===============================
+// TWILIO CLIENT
+// ===============================
 const tw = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
+// ===============================
+// SETTINGS
+// ===============================
 let lastCallAt = 0;
 const COOLDOWN_MS = 60_000;
-const TRIGGER = "callout";
+const TRIGGER = "@call";
+const DELAY_BETWEEN_CALLS_MS = 1000;
 
-function parseNumbers(raw) {
-  return raw
-    .split(",")
-    .map(n => n.trim())
-    .filter(n => n.length > 0);
+// ===============================
+// SLEEP HELPER
+// ===============================
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// ===============================
+// SAFE NUMBER PARSER
+// ===============================
+function parseNumbers(raw) {
+  return (raw || "")
+    .replace(/["'\n\r]/g, "")
+    .split(",")
+    .map((n) => n.trim())
+    .filter((n) => /^\+\d{10,15}$/.test(n));
+}
+
+// ===============================
+// CALL ALL NUMBERS SEQUENTIALLY
+// ===============================
+async function callAllNumbers(numbers) {
+  console.log(`📋 Total numbers to call: ${numbers.length}`);
+  console.log("Numbers:", numbers);
+
+  let successCount = 0;
+  let failCount = 0;
+
+  for (let i = 0; i < numbers.length; i++) {
+    const num = numbers[i];
+    const position = `${i + 1} of ${numbers.length}`;
+
+    try {
+      console.log(`📞 Calling ${position}: ${num}`);
+
+      const call = await tw.calls.create({
+        to: num,
+        from: TWILIO_FROM_NUMBER,
+        twiml: "<Response><Say>Trade alert triggered. Check your positions now.</Say></Response>",
+      });
+
+      console.log(`✅ Called ${position}: ${num} | SID: ${call.sid}`);
+      successCount++;
+
+    } catch (err) {
+      console.error(`❌ FAILED ${position}: ${num}`);
+      console.error(`Reason: ${err.message}`);
+      failCount++;
+    }
+
+    // Wait between calls except after the last one
+    if (i < numbers.length - 1) {
+      console.log(`⏳ Waiting ${DELAY_BETWEEN_CALLS_MS}ms before next call...`);
+      await sleep(DELAY_BETWEEN_CALLS_MS);
+    }
+  }
+
+  console.log(`🏁 Call cycle complete. Success: ${successCount} | Failed: ${failCount}`);
+}
+
+// ===============================
+// MESSAGE HANDLER
+// ===============================
 client.on("messageCreate", async (message) => {
   try {
     if (message.author.bot) return;
@@ -55,37 +122,43 @@ client.on("messageCreate", async (message) => {
     if (!content.includes(TRIGGER)) return;
 
     const now = Date.now();
-    if (now - lastCallAt < COOLDOWN_MS) return;
+    if (now - lastCallAt < COOLDOWN_MS) {
+      const remaining = Math.ceil((COOLDOWN_MS - (now - lastCallAt)) / 1000);
+      console.log(`⏳ Cooldown active. ${remaining}s remaining.`);
+      return;
+    }
+
     lastCallAt = now;
+
+    console.log(`🔔 Trigger detected in message: "${message.content}"`);
+    console.log(`👤 Triggered by: ${message.author.tag}`);
 
     const numbers = parseNumbers(TO_NUMBER);
 
-    console.log("Numbers parsed:", numbers);
-
-    for (const num of numbers) {
-      try {
-        console.log("Calling:", num);
-
-        const call = await tw.calls.create({
-          to: num,
-          from: TWILIO_FROM_NUMBER,
-          twiml:
-            "<Response><Say voice='alice'>Discord callout triggered.</Say></Response>",
-        });
-
-        console.log("Success:", num, call.sid);
-      } catch (err) {
-        console.error("Failed:", num, err.message);
-      }
+    if (numbers.length === 0) {
+      console.error("❌ No valid numbers found. Check TO_NUMBER format.");
+      return;
     }
+
+    await callAllNumbers(numbers);
+
   } catch (err) {
-    console.error("Error:", err?.message || err);
+    console.error("🔥 Bot Error:", err?.message || err);
   }
 });
 
-client.once("clientReady", () => {
-  console.log(`Bot logged in as ${client.user.tag}`);
-  console.log(`Listening on channel ID: ${CHANNEL_ID}`);
+// ===============================
+// READY EVENT
+// ===============================
+client.once("ready", () => {
+  console.log(`🤖 Logged in as ${client.user.tag}`);
+  console.log(`🎯 Listening on channel: ${CHANNEL_ID}`);
+  console.log(`🔑 Trigger word: ${TRIGGER}`);
+  console.log(`⏱️ Cooldown: ${COOLDOWN_MS / 1000}s`);
+  console.log(`📞 Delay between calls: ${DELAY_BETWEEN_CALLS_MS}ms`);
 });
 
+// ===============================
+// LOGIN
+// ===============================
 client.login(DISCORD_BOT_TOKEN);
