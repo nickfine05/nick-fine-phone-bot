@@ -2,140 +2,186 @@ require("dotenv").config();
 const { Client, GatewayIntentBits } = require("discord.js");
 const twilio = require("twilio");
 
-const {
-  DISCORD_BOT_TOKEN,
-  CHANNEL_ID,
-  TWILIO_ACCOUNT_SID,
-  TWILIO_AUTH_TOKEN,
-  TWILIO_FROM_1,
-  TWILIO_FROM_2,
-  TWILIO_FROM_3,
-  TWILIO_FROM_4,
-  TWILIO_FROM_5,
-  TO_NUMBER,
-} = process.env;
+// =========================
+// ENV VARIABLES
+// =========================
 
-if (!DISCORD_BOT_TOKEN || !CHANNEL_ID || !TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_FROM_1 || !TO_NUMBER) {
-  console.error("❌ Missing environment variables.");
+const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
+const CHANNEL_ID = process.env.CHANNEL_ID;
+
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+
+const TO_NUMBER = process.env.TO_NUMBER;
+
+const TWILIO_FROM_1 = process.env.TWILIO_FROM_1;
+const TWILIO_FROM_2 = process.env.TWILIO_FROM_2;
+const TWILIO_FROM_3 = process.env.TWILIO_FROM_3;
+const TWILIO_FROM_4 = process.env.TWILIO_FROM_4;
+const TWILIO_FROM_5 = process.env.TWILIO_FROM_5;
+
+// =========================
+// BASIC CHECK
+// =========================
+
+if (
+  !DISCORD_BOT_TOKEN ||
+  !CHANNEL_ID ||
+  !TWILIO_ACCOUNT_SID ||
+  !TWILIO_AUTH_TOKEN
+) {
+  console.log("❌ Missing environment variables");
   process.exit(1);
 }
+
+// =========================
+// DISCORD CLIENT
+// =========================
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
+    GatewayIntentBits.MessageContent
+  ]
 });
 
-const tw = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+// =========================
+// TWILIO CLIENT
+// =========================
 
-let lastCallAt = 0;
-const COOLDOWN_MS = 60_000;
-const TRIGGER = "@call";
-const DELAY_BETWEEN_CALLS_MS = 2000;
+const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
-const FROM_NUMBERS = [
+// =========================
+// TWILIO NUMBER POOL
+// =========================
+
+const TWILIO_NUMBERS = [
   TWILIO_FROM_1,
   TWILIO_FROM_2,
   TWILIO_FROM_3,
   TWILIO_FROM_4,
-  TWILIO_FROM_5,
+  TWILIO_FROM_5
 ].filter(Boolean);
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+let numberIndex = 0;
+
+function getNextTwilioNumber() {
+  const number = TWILIO_NUMBERS[numberIndex];
+  numberIndex = (numberIndex + 1) % TWILIO_NUMBERS.length;
+  return number;
 }
 
-function parseNumbers(raw) {
-  return (raw || "")
+// =========================
+// SETTINGS
+// =========================
+
+const TRIGGER = "@call";
+const COOLDOWN = 60000;
+
+let lastCallTime = 0;
+
+// =========================
+// NUMBER PARSER
+// =========================
+
+function getTargetNumbers() {
+  return (TO_NUMBER || "")
     .replace(/["'\n\r]/g, "")
     .split(",")
-    .map((n) => n.trim())
-    .filter((n) => /^\+\d{10,15}$/.test(n));
+    .map(n => n.trim())
+    .filter(n => /^\+\d{10,15}$/.test(n));
 }
 
-function splitIntoGroups(numbers, groupCount) {
-  const groups = Array.from({ length: groupCount }, () => []);
-  numbers.forEach((num, i) => {
-    groups[i % groupCount].push(num);
-  });
-  return groups;
-}
+// =========================
+// CALL WITH RETRY
+// =========================
 
-async function callGroup(fromNumber, recipients, groupIndex) {
-  let success = 0;
-  let fail = 0;
-  for (let i = 0; i < recipients.length; i++) {
-    const num = recipients[i];
+async function callWithRetry(number, retries = 3) {
+
+  for (let i = 1; i <= retries; i++) {
+
+    const fromNumber = getNextTwilioNumber();
+
     try {
-      console.log(`📞 [Line ${groupIndex + 1}] Calling: ${num}`);
-      const call = await tw.calls.create({
-        to: num,
+
+      console.log(`📞 Attempt ${i} calling ${number} from ${fromNumber}`);
+
+      const call = await twilioClient.calls.create({
+        to: number,
         from: fromNumber,
-        twiml: "<Response><Pause length=\"20\"/></Response>",
+        twiml: "<Response><Say>Alert triggered</Say></Response>"
       });
-      console.log(`✅ [Line ${groupIndex + 1}] OK: ${num} | SID: ${call.sid}`);
-      success++;
-    } catch (err) {
-      console.error(`❌ [Line ${groupIndex + 1}] FAILED: ${num} | ${err.message}`);
-      fail++;
-    }
-    if (i < recipients.length - 1) {
-      await sleep(DELAY_BETWEEN_CALLS_MS);
+
+      console.log(`✅ Call success SID: ${call.sid}`);
+
+      return;
+
+    } catch (error) {
+
+      console.log(`❌ Attempt ${i} failed`);
+
+      if (i === retries) {
+        console.log(`🚫 All attempts failed for ${number}`);
+      } else {
+        await new Promise(r => setTimeout(r, 3000));
+      }
     }
   }
-  return { success, fail };
 }
 
-async function callAllNumbers(numbers) {
-  console.log(`\n📋 Total numbers: ${numbers.length}`);
-  console.log(`📱 Twilio lines active: ${FROM_NUMBERS.length}`);
-  const groups = splitIntoGroups(numbers, FROM_NUMBERS.length);
-  groups.forEach((group, i) => {
-    console.log(`   Line ${i + 1} (${FROM_NUMBERS[i]}): ${group.length} numbers`);
-  });
-  const results = await Promise.all(
-    groups.map((group, i) => callGroup(FROM_NUMBERS[i], group, i))
-  );
-  const totalSuccess = results.reduce((sum, r) => sum + r.success, 0);
-  const totalFail = results.reduce((sum, r) => sum + r.fail, 0);
-  console.log(`\n🏁 Complete — Success: ${totalSuccess} | Failed: ${totalFail}`);
-}
+// =========================
+// DISCORD EVENT
+// =========================
 
 client.on("messageCreate", async (message) => {
-  try {
-    if (message.author.bot) return;
-    if (message.channelId !== CHANNEL_ID) return;
-    const content = (message.content || "").toLowerCase();
-    if (!content.includes(TRIGGER)) return;
-    const now = Date.now();
-    if (now - lastCallAt < COOLDOWN_MS) {
-      const remaining = Math.ceil((COOLDOWN_MS - (now - lastCallAt)) / 1000);
-      console.log(`⏳ Cooldown active. ${remaining}s remaining.`);
-      return;
-    }
-    lastCallAt = now;
-    console.log(`🔔 Trigger: "${message.content}"`);
-    console.log(`👤 By: ${message.author.tag}`);
-    const numbers = parseNumbers(TO_NUMBER);
-    if (numbers.length === 0) {
-      console.error("❌ No valid numbers found.");
-      return;
-    }
-    await callAllNumbers(numbers);
-  } catch (err) {
-    console.error("🔥 Bot Error:", err?.message || err);
+
+  if (message.author.bot) return;
+  if (message.channelId !== CHANNEL_ID) return;
+
+  const content = message.content.toLowerCase();
+
+  if (!content.includes(TRIGGER)) return;
+
+  const now = Date.now();
+
+  if (now - lastCallTime < COOLDOWN) {
+    console.log("⏳ Cooldown active");
+    return;
   }
+
+  lastCallTime = now;
+
+  const numbers = getTargetNumbers();
+
+  if (!numbers.length) {
+    console.log("❌ No valid target numbers");
+    return;
+  }
+
+  console.log("🚀 Starting call cycle");
+
+  for (const number of numbers) {
+    await callWithRetry(number, 3);
+  }
+
+  console.log("✅ Call cycle complete");
+
 });
 
+// =========================
+// READY
+// =========================
+
 client.once("ready", () => {
+
   console.log(`🤖 Logged in as ${client.user.tag}`);
-  console.log(`🎯 Channel: ${CHANNEL_ID}`);
-  console.log(`📱 Lines: ${FROM_NUMBERS.length}`);
-  console.log(`⏱️ Cooldown: ${COOLDOWN_MS / 1000}s`);
-  console.log(`🔑 Trigger: ${TRIGGER}`);
-  console.log(`Waiting for @call...`);
+  console.log(`📡 Monitoring channel ${CHANNEL_ID}`);
+
 });
+
+// =========================
+// START BOT
+// =========================
 
 client.login(DISCORD_BOT_TOKEN);
