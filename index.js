@@ -39,14 +39,18 @@ const twilioClient = twilio(
 
 const CALL_LIST = [];
 
-for (let i = 1; i <= 24; i++) {
+// supports up to 60 people now
+for (let i = 1; i <= 60; i++) {
 
   const person = process.env[`PERSON_${i}`];
-  const from = process.env[`TWILIO_FROM_${i}`];
+
+  // rotate through 24 twilio numbers
+  const from = process.env[`TWILIO_FROM_${((i - 1) % 24) + 1}`];
 
   if (person && from) {
 
     CALL_LIST.push({
+      personIndex: i,
       to: person,
       from: from
     });
@@ -54,6 +58,12 @@ for (let i = 1; i <= 24; i++) {
   }
 
 }
+
+console.log("📞 Call routing:");
+
+CALL_LIST.forEach(entry => {
+  console.log(`Person ${entry.personIndex} -> ${entry.to} will be called from ${entry.from}`);
+});
 
 // =====================
 // SETTINGS
