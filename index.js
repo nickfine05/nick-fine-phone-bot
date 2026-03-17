@@ -40,7 +40,7 @@ const twilioClient = twilio(
 const CALL_LIST = [];
 
 // supports up to 60 people now
-for (let i = 1; i <= 60; i++) {
+for (let i = 1; i <= 80; i++) {
 
   const person = process.env[`PERSON_${i}`];
 
