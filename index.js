@@ -39,24 +39,17 @@ const twilioClient = twilio(
 
 const CALL_LIST = [];
 
-// supports up to 60 people now
 for (let i = 1; i <= 80; i++) {
-
   const person = process.env[`PERSON_${i}`];
-
-  // rotate through 24 twilio numbers
   const from = process.env[`TWILIO_FROM_${((i - 1) % 24) + 1}`];
 
   if (person && from) {
-
     CALL_LIST.push({
       personIndex: i,
       to: person,
       from: from
     });
-
   }
-
 }
 
 console.log("📞 Call routing:");
@@ -71,6 +64,11 @@ CALL_LIST.forEach(entry => {
 
 const TRIGGER = "@call";
 const COOLDOWN = 60000;
+
+const PERSONAL_NUMBER = "+17572688203";
+const PERSONAL_FROM_NUMBER = process.env.TWILIO_FROM_1;
+const PERSONAL_REPEAT_COUNT = 10;
+const PERSONAL_REPEAT_DELAY_MS = 60000;
 
 let lastCallTime = 0;
 
@@ -87,11 +85,8 @@ function delay(ms) {
 // =====================
 
 async function callWithRetry(target, fromNumber, retries = 3) {
-
   for (let attempt = 1; attempt <= retries; attempt++) {
-
     try {
-
       console.log(`📞 Attempt ${attempt} calling ${target} from ${fromNumber}`);
 
       const call = await twilioClient.calls.create({
@@ -101,27 +96,18 @@ async function callWithRetry(target, fromNumber, retries = 3) {
       });
 
       console.log(`✅ Call success SID: ${call.sid}`);
-
-      return;
-
+      return true;
     } catch (error) {
-
-      console.log(`❌ Attempt ${attempt} failed`);
+      console.log(`❌ Attempt ${attempt} failed for ${target}: ${error.message}`);
 
       if (attempt === retries) {
-
         console.log(`🚫 All attempts failed for ${target}`);
-
+        return false;
       } else {
-
         await delay(3000);
-
       }
-
     }
-
   }
-
 }
 
 // =====================
@@ -138,25 +124,42 @@ client.on("messageCreate", async (message) => {
   const now = Date.now();
 
   if (now - lastCallTime < COOLDOWN) {
-
     console.log("⏳ Cooldown active");
     return;
-
   }
 
   lastCallTime = now;
 
   console.log(`🚀 Starting call cycle for ${CALL_LIST.length} people`);
 
+  // =====================
+  // CALL EVERYONE
+  // =====================
+
   for (const entry of CALL_LIST) {
-
     await callWithRetry(entry.to, entry.from);
-
     await delay(700);
-
   }
 
   console.log("✅ Call cycle finished");
+
+  // =====================
+  // PERSONAL CALL LOOP
+  // =====================
+
+  for (let i = 1; i <= PERSONAL_REPEAT_COUNT; i++) {
+
+    console.log(`📱 Personal call ${i}/${PERSONAL_REPEAT_COUNT}`);
+
+    await callWithRetry(PERSONAL_NUMBER, PERSONAL_FROM_NUMBER);
+
+    if (i < PERSONAL_REPEAT_COUNT) {
+      console.log(`⏳ Waiting ${PERSONAL_REPEAT_DELAY_MS / 1000}s...`);
+      await delay(PERSONAL_REPEAT_DELAY_MS);
+    }
+  }
+
+  console.log("🏁 All personal calls complete");
 
 });
 
@@ -165,10 +168,8 @@ client.on("messageCreate", async (message) => {
 // =====================
 
 client.once("ready", () => {
-
   console.log(`🤖 Logged in as ${client.user.tag}`);
   console.log(`📞 People loaded: ${CALL_LIST.length}`);
-
 });
 
 // =====================
