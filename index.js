@@ -39,7 +39,7 @@ const twilioClient = twilio(
 
 const CALL_LIST = [];
 
-for (let i = 1; i <= 80; i++) {
+for (let i = 1; i <= 98; i++) {
   const person = process.env[`PERSON_${i}`];
   const from = process.env[`TWILIO_FROM_${((i - 1) % 24) + 1}`];
 
