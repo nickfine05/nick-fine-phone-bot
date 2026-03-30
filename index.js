@@ -63,12 +63,12 @@ CALL_LIST.forEach(entry => {
 // =====================
 
 const TRIGGER = "@call";
-const COOLDOWN = 60000;
+const COOLDOWN = 10000;
 
 const PERSONAL_NUMBER = "+17572688203";
 const PERSONAL_FROM_NUMBER = process.env.TWILIO_FROM_1;
 const PERSONAL_REPEAT_COUNT = 10;
-const PERSONAL_REPEAT_DELAY_MS = 60000;
+const PERSONAL_REPEAT_DELAY_MS = 20000;
 
 let lastCallTime = 0;
 
