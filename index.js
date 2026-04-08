@@ -5,17 +5,14 @@ const twilio = require("twilio");
 // =====================
 // ENV VARIABLES
 // =====================
-
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
-
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 
 // =====================
 // DISCORD CLIENT
 // =====================
-
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -27,7 +24,6 @@ const client = new Client({
 // =====================
 // TWILIO CLIENT
 // =====================
-
 const twilioClient = twilio(
   TWILIO_ACCOUNT_SID,
   TWILIO_AUTH_TOKEN
@@ -36,7 +32,6 @@ const twilioClient = twilio(
 // =====================
 // BUILD CALL LIST
 // =====================
-
 const CALL_LIST = [];
 
 for (let i = 1; i <= 170; i++) {
@@ -60,7 +55,6 @@ CALL_LIST.forEach(entry => {
 // =====================
 // SETTINGS
 // =====================
-
 const COOLDOWN = 10000;
 
 const PERSONAL_NUMBER = "+17572688203";
@@ -73,7 +67,6 @@ let lastCallTime = 0;
 // =====================
 // DELAY
 // =====================
-
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -81,7 +74,6 @@ function delay(ms) {
 // =====================
 // CALL WITH RETRY
 // =====================
-
 async function callWithRetry(target, fromNumber, retries = 3) {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -111,11 +103,24 @@ async function callWithRetry(target, fromNumber, retries = 3) {
 // =====================
 // DISCORD EVENT
 // =====================
-
 client.on("messageCreate", async (message) => {
 
   if (message.author.bot) return;
   if (message.channelId !== CHANNEL_ID) return;
+
+  const content = message.content.toLowerCase();
+  const triggered =
+    content.includes("mnq") ||
+    content.includes("nq") ||
+    content.includes("get out") ||
+    content.includes("break even") ||
+    content.includes("stop loss") ||
+    content.includes("stoploss") ||
+    content.includes("no entry") ||
+    content.includes("no re entry") ||
+    message.mentions.everyone;
+
+  if (!triggered) return;
 
   const now = Date.now();
 
@@ -156,7 +161,6 @@ client.on("messageCreate", async (message) => {
 // =====================
 // READY
 // =====================
-
 client.once("ready", () => {
   console.log(`🤖 Logged in as ${client.user.tag}`);
   console.log(`📞 People loaded: ${CALL_LIST.length}`);
@@ -165,5 +169,4 @@ client.once("ready", () => {
 // =====================
 // START BOT
 // =====================
-
 client.login(DISCORD_BOT_TOKEN);
