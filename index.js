@@ -53,7 +53,6 @@ for (let i = 1; i <= 170; i++) {
 }
 
 console.log("📞 Call routing:");
-
 CALL_LIST.forEach(entry => {
   console.log(`Person ${entry.personIndex} -> ${entry.to} will be called from ${entry.from}`);
 });
@@ -62,7 +61,6 @@ CALL_LIST.forEach(entry => {
 // SETTINGS
 // =====================
 
-const TRIGGER = "@call";
 const COOLDOWN = 10000;
 
 const PERSONAL_NUMBER = "+17572688203";
@@ -119,8 +117,6 @@ client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (message.channelId !== CHANNEL_ID) return;
 
-  if (!message.content.toLowerCase().includes(TRIGGER)) return;
-
   const now = Date.now();
 
   if (now - lastCallTime < COOLDOWN) {
@@ -130,12 +126,10 @@ client.on("messageCreate", async (message) => {
 
   lastCallTime = now;
 
-  console.log(`🚀 Starting call cycle for ${CALL_LIST.length} people`);
+  console.log(`🚀 Triggered by message: "${message.content}"`);
+  console.log(`📞 Starting call cycle for ${CALL_LIST.length} people`);
 
-  // =====================
   // CALL EVERYONE
-  // =====================
-
   for (const entry of CALL_LIST) {
     await callWithRetry(entry.to, entry.from);
     await delay(700);
@@ -143,12 +137,8 @@ client.on("messageCreate", async (message) => {
 
   console.log("✅ Call cycle finished");
 
-  // =====================
   // PERSONAL CALL LOOP
-  // =====================
-
   for (let i = 1; i <= PERSONAL_REPEAT_COUNT; i++) {
-
     console.log(`📱 Personal call ${i}/${PERSONAL_REPEAT_COUNT}`);
 
     await callWithRetry(PERSONAL_NUMBER, PERSONAL_FROM_NUMBER);
