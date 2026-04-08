@@ -108,20 +108,6 @@ client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   if (message.channelId !== CHANNEL_ID) return;
 
-  const content = message.content.toLowerCase();
-  const triggered =
-    content.includes("mnq") ||
-    content.includes("nq") ||
-    content.includes("get out") ||
-    content.includes("break even") ||
-    content.includes("stop loss") ||
-    content.includes("stoploss") ||
-    content.includes("no entry") ||
-    content.includes("no re entry") ||
-    message.mentions.everyone;
-
-  if (!triggered) return;
-
   const now = Date.now();
 
   if (now - lastCallTime < COOLDOWN) {
