@@ -30,7 +30,7 @@ const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 // BUILD CALL LIST
 // =====================
 const CALL_LIST = [];
-for (let i = 1; i <= 170; i++) {
+for (let i = 1; i <= 180; i++) {
   const person = process.env[`PERSON_${i}`];
   const from = process.env[`TWILIO_FROM_${((i - 1) % 24) + 1}`];
   if (person && from) {
