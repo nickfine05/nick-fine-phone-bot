@@ -1,14 +1,12 @@
 require("dotenv").config();
 const { Client, GatewayIntentBits } = require("discord.js");
-const twilio = require("twilio");
+const { RestClient } = require("@signalwire/compatibility-api");
 
 // =====================
 // ENV VARIABLES
 // =====================
 const DISCORD_BOT_TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CHANNEL_ID = process.env.CHANNEL_ID;
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 
 // =====================
 // DISCORD CLIENT
@@ -22,9 +20,13 @@ const client = new Client({
 });
 
 // =====================
-// TWILIO CLIENT
+// SIGNALWIRE CLIENT
 // =====================
-const twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+const twilioClient = new RestClient(
+  process.env.SIGNALWIRE_PROJECT_ID,
+  process.env.SIGNALWIRE_API_TOKEN,
+  { signalwireSpaceUrl: process.env.SIGNALWIRE_SPACE_URL }
+);
 
 // =====================
 // BUILD CALL LIST
@@ -38,7 +40,7 @@ for (let i = 1; i <= 190; i++) {
   }
 }
 
-// Group by "from" number — each Twilio number runs its own lane in parallel
+// Group by "from" number — each number runs its own lane in parallel
 const CALL_GROUPS = {};
 for (const entry of CALL_LIST) {
   if (!CALL_GROUPS[entry.from]) CALL_GROUPS[entry.from] = [];
@@ -54,12 +56,14 @@ console.log(`📦 ${CALL_LIST.length} people across ${Object.keys(CALL_GROUPS).l
 // =====================
 // SETTINGS
 // =====================
-const COOLDOWN = 120000; // 2 minutes — bumped up since the cycle is much faster now
-const INTRA_GROUP_DELAY_MS = 150; // small gap between sequential calls in a lane
+const COOLDOWN = 120000;
+const INTRA_GROUP_DELAY_MS = 150;
 const PERSONAL_NUMBER = "+17572688203";
 const PERSONAL_FROM_NUMBER = process.env.TWILIO_FROM_1;
 const PERSONAL_REPEAT_COUNT = 10;
 const PERSONAL_REPEAT_DELAY_MS = 20000;
+const RING_TIMEOUT_SEC = 8;
+const AUTO_CANCEL_MS = 5000;
 let lastCallTime = 0;
 
 // =====================
@@ -79,9 +83,19 @@ async function callWithRetry(target, fromNumber, retries = 3) {
       const call = await twilioClient.calls.create({
         to: target,
         from: fromNumber,
-        twiml: "<Response><Say>Alert triggered</Say></Response>"
+        twiml: "<Response><Say>Alert triggered</Say></Response>",
+        timeout: RING_TIMEOUT_SEC
       });
-      console.log(`✅ Call success SID: ${call.sid}`);
+      console.log(`✅ Call placed SID: ${call.sid}`);
+
+      setTimeout(async () => {
+        try {
+          await twilioClient.calls(call.sid).update({ status: "completed" });
+        } catch (e) {
+          // call already ended naturally, ignore
+        }
+      }, AUTO_CANCEL_MS);
+
       return true;
     } catch (error) {
       console.log(`❌ Attempt ${attempt} failed for ${target}: ${error.message}`);
@@ -125,7 +139,6 @@ client.on("messageCreate", async (message) => {
   console.log(`🚀 Triggered by message: "${message.content}"`);
   console.log(`📞 Firing ${CALL_LIST.length} calls across ${Object.keys(CALL_GROUPS).length} lanes`);
 
-  // FIRE ALL LANES IN PARALLEL
   await Promise.all(
     Object.entries(CALL_GROUPS).map(([from, entries]) => processLane(from, entries))
   );
@@ -133,7 +146,6 @@ client.on("messageCreate", async (message) => {
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   console.log(`✅ Call cycle finished in ${elapsed}s`);
 
-  // PERSONAL CALL LOOP
   for (let i = 1; i <= PERSONAL_REPEAT_COUNT; i++) {
     console.log(`📱 Personal call ${i}/${PERSONAL_REPEAT_COUNT}`);
     await callWithRetry(PERSONAL_NUMBER, PERSONAL_FROM_NUMBER);
